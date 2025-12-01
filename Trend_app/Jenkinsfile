@@ -1,0 +1,64 @@
+pipeline {
+    agent any
+
+    environment {
+        REGISTRY = "faizalfaizu"
+        IMAGE = "your-app"
+        TAG = "${env.BUILD_NUMBER}"
+
+        // Jenkins credential IDs
+        GIT_CREDENTIAL = "github-creds"
+        DOCKER_CREDENTIAL = "dockerhub-creds"
+        KUBE_CONFIG = "kubeconfig-creds"
+    }
+
+    stages {
+
+        stage('Checkout Code') {
+            steps {
+                git credentialsId: "${GIT_CREDENTIAL}", url: "https://github.com/<user>/<repo>.git", branch: "main"
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    sh """
+                        docker build -t ${REGISTRY}/${IMAGE}:${TAG} .
+                    """
+                }
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                script {
+                    docker.withRegistry('https://index.docker.io/v1/', "${DOCKER_CREDENTIAL}") {
+                        sh """
+                            docker push ${REGISTRY}/${IMAGE}:${TAG}
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Update Kubernetes Deployment') {
+            steps {
+                script {
+                    sh """
+                        kubectl set image deployment/${IMAGE}-deployment ${IMAGE}-container=${REGISTRY}/${IMAGE}:${TAG} --kubeconfig=$KUBECONFIG
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Application Build, Push, and Deploy Successful!"
+        }
+        failure {
+            echo "Pipeline Failed!"
+        }
+    }
+}
